@@ -238,7 +238,11 @@ def register_upload_in_db(client_id, filename, blob_path, extension, size_bytes)
 
 @app.route('/')
 def serve_frontend():
-    return send_from_directory('../frontend', 'index.html')
+    # Em dev: ../frontend | Em deploy: ./frontend (mesma pasta)
+    frontend_dir = os.path.join(os.path.dirname(__file__), '..', 'frontend')
+    if not os.path.exists(frontend_dir):
+        frontend_dir = os.path.join(os.path.dirname(__file__), 'frontend')
+    return send_from_directory(frontend_dir, 'index.html')
 
 
 @app.route('/api/health', methods=['GET'])
