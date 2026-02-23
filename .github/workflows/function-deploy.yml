@@ -1,0 +1,36 @@
+# .github/workflows/function-deploy.yml
+name: Deploy Azure Function (func-brucken-upload)
+
+on:
+  push:
+    branches: [main]
+    paths: ['azure-function/**']
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'azure-function/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          cd azure-function
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: 'func-brucken-upload'
+          package: './azure-function'
+          publish-profile: ${{ secrets.AZURE_FUNCTION_PUBLISH_PROFILE }}

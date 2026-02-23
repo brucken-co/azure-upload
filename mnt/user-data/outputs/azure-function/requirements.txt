@@ -1,5 +1,0 @@
-azure-functions==1.21.3
-azure-storage-blob==12.24.0
-pandas==2.2.3
-openpyxl==3.1.5
-pyarrow==18.1.0
