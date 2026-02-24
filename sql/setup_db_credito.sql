@@ -107,7 +107,7 @@ BEGIN
     VALUES (
         'CLI-00123',
         'Empresa Demo LTDA',
-        'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f',
+        '1ae77eea3ced9a4db414befd18594733165542b06730e686c17a3d8b0e0ca64e', -- SHA-256 de 'token-secreto-123'
         'cli-00123'
     );
     PRINT '✓ Cliente demo CLI-00123 inserido';
@@ -119,7 +119,7 @@ BEGIN
     VALUES (
         'CLI-00456',
         'Financeira ABC S.A.',
-        'c0e81794384491161f1777c232bc6bd9ec38f616560b120fda8e90f383853542',
+        'd5a0ef72123d6bd09b4d4ad8a500c9f34975cd7c2e0fdc4fa64ff73a7c96fa45', -- SHA-256 de 'token-secreto-456'
         'cli-00456'
     );
     PRINT '✓ Cliente demo CLI-00456 inserido';

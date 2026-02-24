@@ -1,6 +1,6 @@
-flask==3.1.0
-flask-cors==5.0.1
+azure-functions==1.21.3
 azure-storage-blob==12.24.0
-python-dotenv==1.0.1
-gunicorn==23.0.0
+pandas==2.2.3
+openpyxl==3.1.5
 pyodbc==5.2.0
+pyarrow==18.1.0
