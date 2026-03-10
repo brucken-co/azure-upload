@@ -22,9 +22,11 @@ import os
 import uuid
 import hashlib
 import json
+import threading
 from datetime import datetime, timezone
 from io import BytesIO
 
+import requests as http_requests
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from azure.storage.blob import BlobServiceClient, ContentSettings
@@ -50,6 +52,10 @@ DB_PASSWORD = os.getenv('DB_PASSWORD', '')
 
 # Auth — reusa JWT_SECRET que já existe
 API_SECRET_KEY = os.getenv('JWT_SECRET', 'dev-secret-key')
+
+# Azure Function — processamento pós-upload
+FUNCTION_URL = os.getenv('FUNCTION_URL', '')  # https://func-brucken-upload.azurewebsites.net/api/process
+PROCESS_SECRET = os.getenv('PROCESS_SECRET', '')
 
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls', 'json', 'txt', 'parquet'}
 MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
@@ -220,6 +226,23 @@ def get_client(client_id):
     return DEMO_CLIENTS.get(client_id)
 
 
+def trigger_processing(blob_path):
+    """Chama a Azure Function para validar e processar o arquivo (em background)."""
+    if not FUNCTION_URL:
+        app.logger.warning("FUNCTION_URL não configurada — processamento automático desabilitado")
+        return
+    try:
+        resp = http_requests.post(
+            FUNCTION_URL,
+            json={'blob_path': blob_path},
+            headers={'x-process-secret': PROCESS_SECRET},
+            timeout=300
+        )
+        app.logger.info(f"Function response [{blob_path}]: {resp.status_code}")
+    except Exception as e:
+        app.logger.error(f"Erro ao chamar function [{blob_path}]: {e}")
+
+
 def register_upload_in_db(client_id, filename, blob_path, extension, size_bytes):
     """Registra upload na tabela upload_files."""
     file_id = query_db(
@@ -346,13 +369,17 @@ def upload_file():
             client_id, file.filename, blob_path, ext, len(file_content)
         )
 
+        # Dispara processamento em background (não bloqueia a resposta)
+        t = threading.Thread(target=trigger_processing, args=(blob_path,), daemon=True)
+        t.start()
+
         return jsonify({
             'success': True,
             'file_id': file_id,
             'blob_path': blob_path,
             'file_name': file.filename,
             'file_size': len(file_content),
-            'message': 'Arquivo enviado para bruckencredito e registrado em db_credito'
+            'message': 'Arquivo enviado. Processamento iniciado.'
         })
 
     except Exception as e:

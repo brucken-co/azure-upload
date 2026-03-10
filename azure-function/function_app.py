@@ -1,10 +1,11 @@
 """
-Azure Function — Blob Trigger + Carga no db_credito
+Azure Function — HTTP Trigger + Carga no db_credito
 =====================================================
-Disparada quando novo arquivo chega em bruckencredito/uploads-clientes.
+Chamada pelo backend após upload para processar e validar o arquivo.
 
-Variáveis de ambiente (mesmos nomes do credito-app-brucken):
+Variáveis de ambiente:
     AzureWebJobsStorage  → connection string do bruckencredito
+    PROCESS_SECRET       → segredo compartilhado com o backend
     DB_SERVER            → srv-credito-analytics.database.windows.net
     DB_NAME              → db_credito
     DB_USER              → admin user
@@ -26,6 +27,7 @@ from azure.storage.blob import BlobServiceClient
 # CONFIG — mesmos nomes de variáveis do credito-app-brucken
 # ============================================================
 CONNECTION_STRING = os.environ.get('AzureWebJobsStorage')
+PROCESS_SECRET = os.environ.get('PROCESS_SECRET', '')
 DB_SERVER = os.environ.get('DB_SERVER', 'srv-credito-analytics.database.windows.net')
 DB_NAME = os.environ.get('DB_NAME', 'db_credito')
 DB_USER = os.environ.get('DB_USER', '')
@@ -148,25 +150,41 @@ def load_dataframe_to_staging(df, upload_file_id, client_id):
 
 
 # ============================================================
-# MAIN FUNCTION
+# MAIN FUNCTION — HTTP Trigger
 # ============================================================
-@app.blob_trigger(
-    arg_name="blob",
-    path="uploads-clientes/{*name}",
-    connection="AzureWebJobsStorage"
-)
-def process_uploaded_file(blob: func.InputStream):
-    blob_name = blob.name
-    blob_length = blob.length
+@app.route(route="process", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def process_uploaded_file(req: func.HttpRequest) -> func.HttpResponse:
+    # Valida segredo compartilhado
+    if PROCESS_SECRET and req.headers.get('x-process-secret') != PROCESS_SECRET:
+        return func.HttpResponse('Unauthorized', status_code=401)
 
-    logging.info(f"[TRIGGER] Arquivo: {blob_name} ({blob_length} bytes)")
+    try:
+        body = req.get_json()
+    except ValueError:
+        return func.HttpResponse('Body JSON inválido', status_code=400)
 
-    relative_path = blob_name.replace('uploads-clientes/', '') if blob_name.startswith('uploads-clientes/') else blob_name
-    parts = relative_path.split('/')
+    blob_path = body.get('blob_path', '').strip()
+    if not blob_path:
+        return func.HttpResponse('blob_path é obrigatório', status_code=400)
+
+    blob_name = f"uploads-clientes/{blob_path}"
+    logging.info(f"[HTTP TRIGGER] Processando: {blob_name}")
+
+    # Baixa o conteúdo do blob
+    try:
+        service = BlobServiceClient.from_connection_string(CONNECTION_STRING)
+        blob_client = service.get_container_client('uploads-clientes').get_blob_client(blob_path)
+        blob_length = blob_client.get_blob_properties().size
+        content = blob_client.download_blob().readall()
+    except Exception as e:
+        logging.error(f"Erro ao baixar blob {blob_name}: {e}")
+        return func.HttpResponse(f'Erro ao acessar blob: {str(e)}', status_code=500)
+
+    parts = blob_path.split('/')
     filename = parts[-1] if parts else 'unknown'
     extension = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
 
-    upload_file_id, client_id = get_upload_file_id(relative_path)
+    upload_file_id, client_id = get_upload_file_id(blob_path)
 
     validation_result = {
         'blob_name': blob_name,
@@ -182,7 +200,6 @@ def process_uploaded_file(blob: func.InputStream):
     }
 
     try:
-        content = blob.read()
         df = None
 
         if extension == 'csv':
@@ -201,7 +218,7 @@ def process_uploaded_file(blob: func.InputStream):
         if not validation_result['errors']:
             validation_result['valid'] = True
             move_blob(content, blob_name, STAGING_CONTAINER)
-            update_upload_status(relative_path, 'staged', validation_result)
+            update_upload_status(blob_path, 'staged', validation_result)
 
             if df is not None and upload_file_id:
                 rows = load_dataframe_to_staging(df, upload_file_id, client_id)
@@ -210,7 +227,7 @@ def process_uploaded_file(blob: func.InputStream):
                 logging.info(f"[OK] {blob_name} → staging")
         else:
             move_blob(content, blob_name, REJECTED_CONTAINER)
-            update_upload_status(relative_path, 'rejected', validation_result)
+            update_upload_status(blob_path, 'rejected', validation_result)
             logging.warning(f"[REJEITADO] {blob_name}: {validation_result['errors']}")
 
         save_notification(validation_result)
@@ -218,8 +235,15 @@ def process_uploaded_file(blob: func.InputStream):
     except Exception as e:
         logging.error(f"[ERRO] {blob_name}: {str(e)}")
         validation_result['errors'].append(f'Erro interno: {str(e)}')
-        update_upload_status(relative_path, 'error', validation_result)
+        update_upload_status(blob_path, 'error', validation_result)
         save_notification(validation_result)
+
+    status_code = 200 if validation_result['valid'] else 422
+    return func.HttpResponse(
+        json.dumps(validation_result, ensure_ascii=False),
+        status_code=status_code,
+        mimetype='application/json'
+    )
 
 
 # ============================================================
