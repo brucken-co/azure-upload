@@ -152,7 +152,7 @@ def load_dataframe_to_staging(df, upload_file_id, client_id):
 # ============================================================
 @app.blob_trigger(
     arg_name="blob",
-    path="uploads-clientes/{name}",
+    path="uploads-clientes/{*name}",
     connection="AzureWebJobsStorage"
 )
 def process_uploaded_file(blob: func.InputStream):
