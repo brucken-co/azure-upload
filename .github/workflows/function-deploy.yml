@@ -19,14 +19,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: 'azure-function/requirements.txt'
 
-      - name: Install dependencies into package
-        run: |
-          pip install -r azure-function/requirements.txt \
-            --target azure-function/.python_packages/lib/site-packages \
-            --upgrade
+      - name: Install Azure Functions Core Tools
+        run: npm install -g azure-functions-core-tools@4 --unsafe-perm true
 
       - name: Azure Login
         uses: azure/login@v2
@@ -34,7 +29,6 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to Azure Functions
-        uses: Azure/functions-action@v1
-        with:
-          app-name: 'func-brucken-upload'
-          package: './azure-function'
+        run: |
+          cd azure-function
+          func azure functionapp publish func-brucken-upload --python
