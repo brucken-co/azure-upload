@@ -254,12 +254,18 @@ def validate_csv(content, result):
     df = None
 
     for enc in rules['encodings']:
-        try:
-            df = pd.read_csv(BytesIO(content), encoding=enc, low_memory=False)
-            result['metadata']['encoding'] = enc
+        for sep in [',', ';', '\t', '|']:
+            try:
+                df = pd.read_csv(BytesIO(content), encoding=enc, sep=sep, low_memory=False)
+                if len(df.columns) > 1:
+                    result['metadata']['encoding'] = enc
+                    result['metadata']['separator'] = sep
+                    break
+                df = None
+            except (UnicodeDecodeError, pd.errors.ParserError):
+                continue
+        if df is not None:
             break
-        except (UnicodeDecodeError, pd.errors.ParserError):
-            continue
 
     if df is None:
         result['errors'].append('CSV ilegível com encodings UTF-8/Latin-1')
